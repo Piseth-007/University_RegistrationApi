@@ -1,58 +1,246 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# University Registration System — Backend API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+RESTful backend API for the **University Registration System**, built with **Laravel 13**, **Laravel Sanctum** (Hybrid SPA Session Cookie + Bearer Token Authentication), and **PostgreSQL**.
 
-## About Laravel
+---
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+## Tech Stack
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+- **Framework:** Laravel 13 (`php ^8.3`)
+- **Authentication:** Laravel Sanctum 4 (Supports both SPA Stateful Cookies & Bearer Tokens)
+- **Database:** PostgreSQL (`pgsql`)
+- **Architecture:** FormRequest Validation, Standardized JSON Exception Handling, Role-Based Access (`admin`, `staff`, `student`)
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+---
 
-## Learning Laravel
+## Prerequisites
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+- PHP `>= 8.3`
+- Composer
+- PostgreSQL
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+---
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+## Installation & Setup
 
-## Agentic Development
+1. **Install PHP dependencies:**
+   ```bash
+   composer install
+   ```
 
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+2. **Configure environment variables:**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+   Update `.env` with your PostgreSQL database credentials:
+   ```env
+   DB_CONNECTION=pgsql
+   DB_HOST=127.0.0.1
+   DB_PORT=5432
+   DB_DATABASE=university_registration
+   DB_USERNAME=postgres
+   DB_PASSWORD=your_password
 
-```bash
-composer require laravel/boost --dev
+   SANCTUM_STATEFUL_DOMAINS=localhost:3000,127.0.0.1:3000,localhost:8000,127.0.0.1:8000
+   SESSION_DRIVER=database
+   ```
 
-php artisan boost:install
+3. **Run database migrations and seed default roles (`admin`, `staff`, `student`):**
+   ```bash
+   php artisan migrate --seed
+   ```
+   *(Or run the role seeder directly: `php artisan db:seed --class=RoleSeeder`)*
+
+4. **Start the development server:**
+   ```bash
+   php artisan serve
+   ```
+   The API will be available at `http://localhost:8000/api`.
+
+---
+
+## Default Roles
+
+Seeded via `database/seeders/RoleSeeder.php`:
+
+| Role Name | Description |
+| :--- | :--- |
+| `admin` | System administrator |
+| `staff` | University Staff |
+| `student` | University Student *(assigned automatically on `/api/auth/register`)* |
+
+---
+
+## API Endpoints
+
+Base URL: `http://localhost:8000/api`
+
+| Method | Endpoint | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/register` | No | Register a new student account |
+| `POST` | `/api/auth/login` | No | Authenticate user and issue session / Bearer token |
+| `GET` | `/api/auth/user` | Yes (`auth:sanctum`) | Get the currently authenticated user and role |
+| `POST` | `/api/auth/logout` | Yes (`auth:sanctum`) | Revoke current Bearer token and invalidate session |
+
+---
+
+### 1. Register (`POST /api/auth/register`)
+
+**Validation Rules:**
+- `name`: required, string, max 255 characters
+- `email`: required, valid email, max 255 characters, unique in `users`
+- `password`: required, string, min 8 characters, uppercase + lowercase (`mixedCase`), numbers, symbols, and must match `password_confirmation`
+
+**Request Body:**
+```json
+{
+    "name": "Student One",
+    "email": "student1@example.com",
+    "password": "Student@123",
+    "password_confirmation": "Student@123"
+}
 ```
 
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
+**Success Response (`201 Created`):**
+```json
+{
+    "message": "Registration successful.",
+    "user": {
+        "id": 1,
+        "name": "Student One",
+        "email": "student1@example.com",
+        "role_id": 3,
+        "role": {
+            "id": 3,
+            "name": "student",
+            "description": "University Student"
+        }
+    },
+    "token": "1|aBcDeFgHiJkLmNoPqRsTuVwXyZ..."
+}
+```
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+### 2. Login (`POST /api/auth/login`)
 
-## Code of Conduct
+**Request Body:**
+```json
+{
+    "email": "student1@example.com",
+    "password": "Student@123"
+}
+```
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+**Success Response (`200 OK`):**
+```json
+{
+    "message": "Login successful.",
+    "user": {
+        "id": 1,
+        "name": "Student One",
+        "email": "student1@example.com",
+        "role_id": 3,
+        "role": {
+            "id": 3,
+            "name": "student",
+            "description": "University Student"
+        }
+    },
+    "token": "2|xYzAbCdEfGhIjKlMnOpQrStUvW..."
+}
+```
 
-## Security Vulnerabilities
+---
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+### 3. Get Current User (`GET /api/auth/user`)
 
-## License
+**Headers (Postman / Bearer Token):**
+```http
+Accept: application/json
+Authorization: Bearer <your_token>
+```
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+**Success Response (`200 OK`):**
+```json
+{
+    "message": "User retrieved successfully.",
+    "user": {
+        "id": 1,
+        "name": "Student One",
+        "email": "student1@example.com",
+        "role_id": 3,
+        "role": {
+            "id": 3,
+            "name": "student",
+            "description": "University Student"
+        }
+    }
+}
+```
+
+---
+
+### 4. Logout (`POST /api/auth/logout`)
+
+**Headers (Postman / Bearer Token):**
+```http
+Accept: application/json
+Authorization: Bearer <your_token>
+```
+
+**Success Response (`200 OK`):**
+```json
+{
+    "message": "Logout successful."
+}
+```
+
+---
+
+## Error Responses
+
+All `/api/*` endpoints return standardized JSON error responses:
+
+- **`422 Unprocessable Entity` (Validation Error):**
+  ```json
+  {
+      "message": "This email address is already registered.",
+      "errors": {
+          "email": [
+              "This email address is already registered."
+          ]
+      }
+  }
+  ```
+- **`401 Unauthorized`:**
+  ```json
+  {
+      "message": "Unauthenticated. Please log in first."
+  }
+  ```
+- **`403 Forbidden`:**
+  ```json
+  {
+      "message": "You are not authorized to perform this action."
+  }
+  ```
+- **`404 Not Found`:**
+  ```json
+  {
+      "message": "The requested resource or endpoint was not found."
+  }
+  ```
+- **`405 Method Not Allowed`:**
+  ```json
+  {
+      "message": "HTTP method not allowed for this endpoint."
+  }
+  ```
+- **`500 Internal Server Error`:**
+  ```json
+  {
+      "message": "An unexpected server error occurred."
+  }
+  ```
