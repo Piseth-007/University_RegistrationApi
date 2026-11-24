@@ -1,15 +1,18 @@
 # University Registration System — Backend API
 
-RESTful backend API for the **University Registration System**, built with **Laravel 13**, **Laravel Sanctum** (Hybrid SPA Session Cookie + Bearer Token Authentication), and **PostgreSQL**.
+RESTful backend API (`v1`) for the **University Registration System**, built with **Laravel 13**, **Laravel Sanctum** (Hybrid SPA Session Cookie + Bearer Token Authentication), **Laravel Socialite** (Google OAuth 2.0), and **PostgreSQL**.
 
 ---
 
 ## Tech Stack
 
 - **Framework:** Laravel 13 (`php ^8.3`)
-- **Authentication:** Laravel Sanctum 4 (Supports both SPA Stateful Cookies & Bearer Tokens)
+- **API Prefix:** `/api/v1` (configured in `bootstrap/app.php`)
+- **Authentication:**
+  - Laravel Sanctum 4 (Hybrid SPA Stateful Cookies & Bearer Tokens)
+  - Laravel Socialite 5 (Google OAuth 2.0 Sign-In)
 - **Database:** PostgreSQL (`pgsql`)
-- **Architecture:** FormRequest Validation, Standardized JSON Exception Handling, Role-Based Access (`admin`, `staff`, `student`)
+- **Architecture:** FormRequest Validation (with strict password rules), Standardized JSON Exception Handling, Role-Based Access (`admin`, `staff`, `student`)
 
 ---
 
@@ -18,6 +21,7 @@ RESTful backend API for the **University Registration System**, built with **Lar
 - PHP `>= 8.3`
 - Composer
 - PostgreSQL
+- Google Cloud OAuth 2.0 Client Credentials (for Google Sign-In)
 
 ---
 
@@ -33,7 +37,7 @@ RESTful backend API for the **University Registration System**, built with **Lar
    cp .env.example .env
    php artisan key:generate
    ```
-   Update `.env` with your PostgreSQL database credentials:
+   Update `.env` with your PostgreSQL database, Sanctum, and Google OAuth credentials:
    ```env
    DB_CONNECTION=pgsql
    DB_HOST=127.0.0.1
@@ -44,6 +48,10 @@ RESTful backend API for the **University Registration System**, built with **Lar
 
    SANCTUM_STATEFUL_DOMAINS=localhost:3000,127.0.0.1:3000,localhost:8000,127.0.0.1:8000
    SESSION_DRIVER=database
+
+   GOOGLE_CLIENT_ID=your_google_client_id
+   GOOGLE_CLIENT_SECRET=your_google_client_secret
+   GOOGLE_REDIRECT_URI=http://localhost:8000/api/v1/auth/google/callback
    ```
 
 3. **Run database migrations and seed default roles (`admin`, `staff`, `student`):**
@@ -56,7 +64,7 @@ RESTful backend API for the **University Registration System**, built with **Lar
    ```bash
    php artisan serve
    ```
-   The API will be available at `http://localhost:8000/api`.
+   The API will be available at `http://localhost:8000/api/v1`.
 
 ---
 
@@ -68,24 +76,26 @@ Seeded via `database/seeders/RoleSeeder.php`:
 | :--- | :--- |
 | `admin` | System administrator |
 | `staff` | University Staff |
-| `student` | University Student *(assigned automatically on `/api/auth/register`)* |
+| `student` | University Student *(assigned automatically on registration and Google OAuth sign-up)* |
 
 ---
 
-## API Endpoints
+## API Endpoints (`v1`)
 
-Base URL: `http://localhost:8000/api`
+Base URL: `http://localhost:8000/api/v1`
 
 | Method | Endpoint | Auth Required | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | No | Register a new student account |
-| `POST` | `/api/auth/login` | No | Authenticate user and issue session / Bearer token |
-| `GET` | `/api/auth/user` | Yes (`auth:sanctum`) | Get the currently authenticated user and role |
-| `POST` | `/api/auth/logout` | Yes (`auth:sanctum`) | Revoke current Bearer token and invalidate session |
+| `POST` | `/api/v1/auth/register` | No | Register a new student account |
+| `POST` | `/api/v1/auth/login` | No | Authenticate user and issue session + Bearer token |
+| `GET` | `/api/v1/auth/google` | No | Get Google OAuth 2.0 authorization URL |
+| `GET` | `/api/v1/auth/google/callback` | No | Handle Google OAuth callback, create/link user, and issue token |
+| `GET` | `/api/v1/auth/user` | Yes (`auth:sanctum`) | Get the currently authenticated user and role |
+| `POST` | `/api/v1/auth/logout` | Yes (`auth:sanctum`) | Revoke current Bearer token and invalidate session |
 
 ---
 
-### 1. Register (`POST /api/auth/register`)
+### 1. Register (`POST /api/v1/auth/register`)
 
 **Validation Rules:**
 - `name`: required, string, max 255 characters
@@ -123,7 +133,7 @@ Base URL: `http://localhost:8000/api`
 
 ---
 
-### 2. Login (`POST /api/auth/login`)
+### 2. Login (`POST /api/v1/auth/login`)
 
 **Request Body:**
 ```json
@@ -154,7 +164,47 @@ Base URL: `http://localhost:8000/api`
 
 ---
 
-### 3. Get Current User (`GET /api/auth/user`)
+### 3. Google OAuth Redirect (`GET /api/v1/auth/google`)
+
+Returns the Google OAuth consent screen URL.
+
+**Success Response (`200 OK`):**
+```json
+{
+    "url": "https://accounts.google.com/o/oauth2/auth?client_id=..."
+}
+```
+
+---
+
+### 4. Google OAuth Callback (`GET /api/v1/auth/google/callback`)
+
+Handles the callback from Google, creates a new `student` user (or links `google_id` and `avatar` to an existing user with the same email), logs the user in, and returns a Sanctum Bearer token.
+
+**Success Response (`200 OK`):**
+```json
+{
+    "message": "Google login successful.",
+    "user": {
+        "id": 1,
+        "name": "Student One",
+        "email": "student1@gmail.com",
+        "google_id": "109876543210123456789",
+        "avatar": "https://lh3.googleusercontent.com/...",
+        "role_id": 3,
+        "role": {
+            "id": 3,
+            "name": "student",
+            "description": "University Student"
+        }
+    },
+    "token": "3|gOoGlEtOkEnExAmPlE..."
+}
+```
+
+---
+
+### 5. Get Current User (`GET /api/v1/auth/user`)
 
 **Headers (Postman / Bearer Token):**
 ```http
@@ -182,7 +232,7 @@ Authorization: Bearer <your_token>
 
 ---
 
-### 4. Logout (`POST /api/auth/logout`)
+### 6. Logout (`POST /api/v1/auth/logout`)
 
 **Headers (Postman / Bearer Token):**
 ```http
@@ -201,7 +251,7 @@ Authorization: Bearer <your_token>
 
 ## Error Responses
 
-All `/api/*` endpoints return standardized JSON error responses:
+All `/api/*` endpoints return standardized JSON error responses (configured in `bootstrap/app.php`):
 
 - **`422 Unprocessable Entity` (Validation Error):**
   ```json

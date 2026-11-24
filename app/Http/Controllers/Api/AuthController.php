@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
@@ -9,6 +10,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Str;
+use Laravel\Socialite\Facades\Socialite;
 use Throwable;
 class AuthController extends Controller
 {
@@ -132,6 +135,86 @@ class AuthController extends Controller
         } catch (Throwable $e) {
             return response()->json([
                 'message' => 'Logout failed. Please try again.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // Redirect to Google OAuth
+    public function redirectToGoogle(): JsonResponse
+    {
+        try {
+            /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+            $driver = Socialite::driver('google');
+
+            $url = $driver
+                ->stateless()
+                ->redirect()
+                ->getTargetUrl();
+
+            return response()->json([
+                'url' => $url,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'message' => 'Failed to generate Google login URL.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    // Handle Google OAuth Callback
+    public function handleGoogleCallback(Request $request): JsonResponse
+    {
+        try {
+            /** @var \Laravel\Socialite\Two\GoogleProvider $driver */
+            $driver = Socialite::driver('google');
+            $googleUser = $driver->stateless()->user();
+
+            $studentRole = Role::where('name', 'student')->first();
+
+            if (! $studentRole) {
+                return response()->json([
+                    'message' => 'Student role is not configured.',
+                ], 500);
+            }
+
+            $user = User::where('google_id', $googleUser->getId())
+                ->orWhere('email', $googleUser->getEmail())
+                ->first();
+
+            if ($user) {
+                $user->update([
+                    'google_id' => $googleUser->getId(),
+                    'avatar' => $googleUser->getAvatar(),
+                ]);
+            } else {
+                $user = User::create([
+                    'name' => $googleUser->getName(),
+                    'email' => $googleUser->getEmail(),
+                    'google_id' => $googleUser->getId(),
+                    'avatar' => $googleUser->getAvatar(),
+                    'password' => Hash::make(Str::random(24)),
+                    'role_id' => $studentRole->id,
+                ]);
+            }
+
+            Auth::login($user);
+
+            if ($request->hasSession()) {
+                $request->session()->regenerate();
+            }
+
+            $token = $user->createToken('auth_token')->plainTextToken;
+
+            return response()->json([
+                'message' => 'Google login successful.',
+                'user' => $user->load('role'),
+                'token' => $token,
+            ]);
+        } catch (Throwable $e) {
+            return response()->json([
+                'message' => 'Google login failed. Please try again.',
                 'error' => $e->getMessage(),
             ], 500);
         }
